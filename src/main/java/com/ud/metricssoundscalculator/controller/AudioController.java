@@ -21,22 +21,22 @@ public class AudioController {
     value = "/analyze",
     consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
     produces = MediaType.APPLICATION_JSON_VALUE
-)
-public ResponseEntity<AcousticResult> analyzeAudio(
-        @RequestParam("file") MultipartFile file) {
-    try {
-        File tempFile = File.createTempFile("upload_", ".wav");
-        file.transferTo(tempFile);
-
-        AcousticResult result = acousticService.computeParameters(tempFile);
-
-        tempFile.delete();
-        return ResponseEntity.ok(result);
-
-    } catch (Exception e) {
-        e.printStackTrace();
-        return ResponseEntity.internalServerError().build();
+    )
+    public ResponseEntity<AcousticResult> analyzeAudio(
+            @RequestParam("file") MultipartFile file) {
+        try {
+            File tempFile = File.createTempFile("upload_", ".wav");
+            file.transferTo(tempFile);
+    
+            AcousticResult result = acousticService.computeParameters(tempFile);
+    
+            tempFile.delete();
+            return ResponseEntity.ok(result);
+    
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
     }
-}
 
 }
