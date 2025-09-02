@@ -14,6 +14,7 @@ import java.io.File;
 
 @RestController
 @RequestMapping("/audio")
+@CrossOrigin(origins = "*")
 public class AudioController {
 
     private final AcousticService acousticService;
