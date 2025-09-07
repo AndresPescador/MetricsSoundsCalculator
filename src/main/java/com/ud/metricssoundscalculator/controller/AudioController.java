@@ -1,14 +1,12 @@
 package com.ud.metricssoundscalculator.controller;
 
 import com.ud.metricssoundscalculator.entity.AcousticResult;
+import com.ud.metricssoundscalculator.entity.AcousticSummary;
 import com.ud.metricssoundscalculator.service.AcousticService;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RestController;
-
 
 import java.io.File;
 
@@ -27,22 +25,24 @@ public class AudioController {
     value = "/analyze",
     consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
     produces = MediaType.APPLICATION_JSON_VALUE
-    )
-    public ResponseEntity<AcousticResult> analyzeAudio(
-            @RequestParam("file") MultipartFile file) {
-        try {
-            File tempFile = File.createTempFile("upload_", ".wav");
-            file.transferTo(tempFile);
-    
-            AcousticResult result = acousticService.computeParameters(tempFile);
-    
-            tempFile.delete();
-            return ResponseEntity.ok(result);
-    
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.internalServerError().build();
-        }
+)
+public ResponseEntity<AcousticSummary> analyzeAudio(
+        @RequestParam("file") MultipartFile file) {
+    try {
+
+        File tempFile = File.createTempFile("upload_", ".wav");
+        file.transferTo(tempFile);
+
+        AcousticSummary summary = acousticService.computeParameters(tempFile);
+
+        tempFile.delete();
+
+        return ResponseEntity.ok(summary);
+
+    } catch (Exception e) {
+        e.printStackTrace();
+        return ResponseEntity.internalServerError().build();
     }
+}
 
 }

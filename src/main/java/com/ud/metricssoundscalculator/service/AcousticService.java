@@ -1,10 +1,17 @@
 package com.ud.metricssoundscalculator.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ud.metricssoundscalculator.entity.AcousticResult;
+import com.ud.metricssoundscalculator.entity.AcousticSummary;
+
 import org.springframework.stereotype.Service;
 
 import javax.sound.sampled.*;
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 
 @Service
@@ -14,7 +21,7 @@ public class AcousticService {
     private final WeightingService weightingService = new WeightingService();
     private final CorrectionService correctionService = new CorrectionService();
 
-    public AcousticResult computeParameters(File wavFile) throws Exception {
+    public AcousticSummary computeParameters(File wavFile) throws Exception {
         AudioInputStream audioStream = AudioSystem.getAudioInputStream(wavFile);
         AudioFormat format = audioStream.getFormat();
 
@@ -27,18 +34,17 @@ public class AcousticService {
         // Aplicar ponderación A
         double[] weightedSignal = weightingService.applyAWeighting(signal, fs);
 
-        // Calcular métricas básicas
+        // Calcular métricas
         double leq = calculateLeq(weightedSignal);
         Map<String, Double> ln = calculateLn(weightedSignal, fs);
         double[] levels = correctionService.computeSpectrum(weightedSignal, fs);
 
-        // Parámetros espaciales (si es estéreo)
         Map<String, Object> spatial = null;
         if (channels == 2) {
             spatial = spatialService.computeSpatialParams(wavFile);
         }
 
-        // Construir resultado
+        // Construir resultado completo
         AcousticResult result = new AcousticResult();
         result.setSampleRate(fs);
         result.setChannels(channels);
@@ -52,7 +58,40 @@ public class AcousticService {
             result.setWiacc((Double) spatial.get("WIACC"));
         }
 
-        return result;
+        // Guardar resultado completo en un archivo txt (JSON dentro)
+        saveResultToFile(result, wavFile.getName());
+
+        // Construir resumen
+        AcousticSummary summary = new AcousticSummary();
+        summary.setSampleRate(fs);
+        summary.setChannels(channels);
+        summary.setWeighting("A");
+        summary.setLeq(leq);
+        summary.setLn(ln);
+
+        // Resumir levels → tomar, por ejemplo, cada 50º valor
+        int step = Math.max(1, levels.length / 100);
+        int previewSize = (int) Math.ceil((double) levels.length / step);
+
+        double[] preview = new double[previewSize];
+        for (int i = 0, j = 0; i < levels.length && j < previewSize; i += step, j++) {
+            preview[j] = levels[i];
+        }
+        summary.setSpectrumPreview(preview);
+
+        return summary;
+    }
+
+    private void saveResultToFile(AcousticResult result, String baseName) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(result);
+
+        Path dir = Paths.get("results");
+        if (!Files.exists(dir)) {
+            Files.createDirectories(dir);
+        }
+        Path file = dir.resolve(baseName.replace(".wav", "_result.txt"));
+        Files.writeString(file, json, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
     private double calculateLeq(double[] signal) {
