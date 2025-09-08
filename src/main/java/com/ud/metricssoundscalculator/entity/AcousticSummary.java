@@ -12,6 +12,8 @@ public class AcousticSummary {
     private String weighting;
     private double leq;
     private Map<String, Double> ln;
-
     private double[] spectrumPreview;
+    private Double deltaL;
+    private Map<String, Double> octaveBands;
+    private Map<String, Integer> levelHistogram;
 }

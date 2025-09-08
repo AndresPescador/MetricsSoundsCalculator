@@ -19,4 +19,8 @@ public class AcousticResult {
     private Double iacc;
     private List<Double> tiacc;
     private Double wiacc;
+
+    private Double deltaL;                   // L10 - L90
+    private Map<String, Double> octaveBands; // Tercio de octava
+    private Map<String, Integer> levelHistogram; // Histograma
 }
