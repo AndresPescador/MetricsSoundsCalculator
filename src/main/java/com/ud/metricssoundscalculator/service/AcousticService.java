@@ -59,6 +59,12 @@ public class AcousticService {
         // Histograma de niveles (usando frameLevels en dB)
         Map<String, Integer> histogram = computeLevelHistogram(frameLevels);
 
+        double[] lmaxmin = computeLmaxLmin(weightedSignal);
+        double durationAbove65 = computeDurationAbove(weightedSignal, fs, 65);
+        double durationAbove70 = computeDurationAbove(weightedSignal, fs, 70);
+        double[] leqSeries = computeLeqMoving(weightedSignal, fs, 60); // ventana de 1 min
+        double[][] spectrogram = computeSpectrogram(weightedSignal, fs, 1); // ventanas de 1s
+
         // Construir resultado completo
         AcousticResult result = new AcousticResult();
         result.setSampleRate(fs);
@@ -70,6 +76,12 @@ public class AcousticService {
         result.setIacc(spatial != null ? (Double) spatial.get("IACC") : null);
         result.setTiacc(spatial != null ? (List<Double>) spatial.get("TIACC") : null);
         result.setWiacc(spatial != null ? (Double) spatial.get("WIACC") : null);
+        result.setLmax(lmaxmin[0]);
+        result.setLmin(lmaxmin[1]);
+        result.setDurationAbove65(durationAbove65);
+        result.setDurationAbove70(durationAbove70);
+        result.setLeqSeries(leqSeries);
+        result.setSpectrogram(spectrogram);
 
         // Guardar resultado en archivo
         saveResultToFile(result, wavFile.getName());
@@ -95,6 +107,12 @@ public class AcousticService {
         summary.setDeltaL(deltaL);
         summary.setOctaveBands(octaveBands);
         summary.setLevelHistogram(histogram);
+        summary.setLmax(lmaxmin[0]);
+        summary.setLmin(lmaxmin[1]);
+        summary.setDurationAbove65(durationAbove65);
+        summary.setDurationAbove70(durationAbove70);
+        summary.setLeqSeries(leqSeries);
+        summary.setSpectrogram(spectrogram);
 
         return summary;
     }
@@ -216,6 +234,81 @@ public class AcousticService {
         }
 
         return levels;
+    }
+
+    private double[] computeLmaxLmin(double[] signal) {
+        double lmax = Double.NEGATIVE_INFINITY;
+        double lmin = Double.POSITIVE_INFINITY;
+
+        for (double sample : signal) {
+            double db = 20 * Math.log10(Math.abs(sample) + 1e-12);
+            if (db > lmax) lmax = db;
+            if (db < lmin) lmin = db;
+        }
+
+        return new double[]{lmax, lmin};
+    }
+
+    private double computeDurationAbove(double[] signal, int fs, double thresholdDb) {
+        int frameSize = (int)(0.125 * fs); // 125 ms
+        int frames = signal.length / frameSize;
+
+        int countAbove = 0;
+        for (int f = 0; f < frames; f++) {
+            double sumSq = 0;
+            for (int i = 0; i < frameSize; i++) {
+                int idx = f * frameSize + i;
+                if (idx < signal.length) {
+                    sumSq += signal[idx] * signal[idx];
+                }
+            }
+            double rms = Math.sqrt(sumSq / frameSize);
+            double levelDb = 20 * Math.log10(rms + 1e-12);
+
+            if (levelDb > thresholdDb) {
+                countAbove++;
+            }
+        }
+
+        double durationSec = (countAbove * frameSize) / (double) fs;
+        return durationSec;
+    }
+
+    private double[] computeLeqMoving(double[] signal, int fs, int windowSec) {
+        int frameSize = fs * windowSec;
+        int frames = signal.length / frameSize;
+
+        double[] leqSeries = new double[frames];
+        for (int f = 0; f < frames; f++) {
+            double sumSq = 0;
+            for (int i = 0; i < frameSize; i++) {
+                int idx = f * frameSize + i;
+                if (idx < signal.length) {
+                    sumSq += signal[idx] * signal[idx];
+                }
+            }
+            double rms = Math.sqrt(sumSq / frameSize);
+            leqSeries[f] = 20 * Math.log10(rms + 1e-12);
+        }
+
+        return leqSeries;
+    }
+
+    private double[][] computeSpectrogram(double[] signal, int fs, int windowSec) {
+        int windowSize = fs * windowSec;
+        int frames = signal.length / windowSize;
+
+        double[][] spectrogram = new double[frames][];
+        for (int f = 0; f < frames; f++) {
+            int start = f * windowSize;
+            int end = Math.min(start + windowSize, signal.length);
+            double[] segment = Arrays.copyOfRange(signal, start, end);
+
+            double[] spectrum = correctionService.computeSpectrum(segment, fs);
+            spectrogram[f] = spectrum;
+        }
+
+        return spectrogram;
     }
 
     private void saveResultToFile(AcousticResult result, String baseName) throws Exception {

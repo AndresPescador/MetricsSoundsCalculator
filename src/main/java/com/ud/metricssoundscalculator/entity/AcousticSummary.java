@@ -16,4 +16,10 @@ public class AcousticSummary {
     private Double deltaL;
     private Map<String, Double> octaveBands;
     private Map<String, Integer> levelHistogram;
+    private Double lmax;
+    private Double lmin;
+    private Double durationAbove65;
+    private Double durationAbove70;
+    private double[] leqSeries;              // Leq por ventana (ej. 1 min)
+    private double[][] spectrogram;
 }
