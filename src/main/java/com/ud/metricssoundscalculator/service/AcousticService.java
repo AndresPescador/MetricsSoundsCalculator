@@ -1,8 +1,7 @@
 package com.ud.metricssoundscalculator.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ud.metricssoundscalculator.entity.AcousticResult;
-import com.ud.metricssoundscalculator.entity.AcousticSummary;
+import com.ud.metricssoundscalculator.dto.*;
 
 import org.springframework.stereotype.Service;
 
@@ -21,7 +20,127 @@ public class AcousticService {
     private final WeightingService weightingService = new WeightingService();
     private final CorrectionService correctionService = new CorrectionService();
 
-    public AcousticSummary computeParameters(File wavFile) throws Exception {
+    // Retorna todo el análisis
+    public AcousticAnalysisDTO getAnalysis(File wavFile, int windowSec) throws Exception {
+        AudioData audioData = loadAudioData(wavFile);
+
+        // --- Estadísticas básicas ---
+        double leq = calculateLeq(audioData.getSignal());
+        Map<String, Double> ln = calculateLn(audioData.getSignal(), audioData.getSampleRate());
+        double[] lmaxmin = computeLmaxLmin(audioData.getSignal());
+        double deltaL = computeDeltaL(ln);
+        double durationAbove65 = computeDurationAbove(audioData.getSignal(), audioData.getSampleRate(), 65);
+        double durationAbove70 = computeDurationAbove(audioData.getSignal(), audioData.getSampleRate(), 70);
+
+        // --- Series temporales ---
+        double[] levels = computeFrameLevels(audioData.getSignal(), audioData.getSampleRate(), 125);
+        double[] leqSeries = computeLeqMoving(audioData.getSignal(), audioData.getSampleRate(), windowSec);
+
+        // --- Frecuencia ---
+        double[] spectrum = correctionService.computeSpectrum(audioData.getSignal(), audioData.getSampleRate());
+        Map<String, Double> octaveBands = computeOctaveBands(spectrum, audioData.getSampleRate());
+        double[][] spectrogram = computeSpectrogram(audioData.getSignal(), audioData.getSampleRate(), windowSec);
+
+        // --- Histogramas ---
+        Map<String, Integer> histogram = computeLevelHistogram(levels);
+
+        // --- Construcción DTO completo ---
+        AcousticAnalysisDTO dto = new AcousticAnalysisDTO();
+        dto.setSampleRate(audioData.getSampleRate());
+        dto.setChannels(audioData.getChannels());
+        dto.setWeighting("A"); // fijo porque aplicamos ponderación A
+
+        dto.setLeq(leq);
+        dto.setLn(ln);
+        dto.setLmax(lmaxmin[0]);
+        dto.setLmin(lmaxmin[1]);
+        dto.setDeltaL(deltaL);
+
+        dto.setDurationAbove65(durationAbove65);
+        dto.setDurationAbove70(durationAbove70);
+
+        dto.setLevels(levels);
+        dto.setLeqSeries(leqSeries);
+
+        dto.setSpectrumPreview(Arrays.copyOf(spectrum, Math.min(512, spectrum.length)));
+        dto.setOctaveBands(octaveBands);
+        dto.setSpectrogram(spectrogram);
+
+        dto.setLevelHistogram(histogram);
+
+        // Espaciales (placeholder hasta que se implementen)
+        dto.setIacc(null);
+        dto.setTiacc(null);
+        dto.setWiacc(null);
+
+        saveResultToFile(dto, wavFile.getName());
+
+        return dto;
+    }
+
+    // Retorna DTO con histograma y datos base
+    public HistogramDTO getHistogram(File wavFile) throws Exception {
+        AudioData audioData = loadAudioData(wavFile);
+
+        double[] frameLevels = computeFrameLevels(audioData.getSignal(), audioData.getSampleRate(), 125);
+        Map<String, Integer> histogram = computeLevelHistogram(frameLevels);
+        double[] lmaxmin = computeLmaxLmin(audioData.getSignal());
+        double leq = calculateLeq(audioData.getSignal());
+
+        HistogramDTO dto = new HistogramDTO();
+        dto.setHistogram(histogram);
+        dto.setLmin(lmaxmin[1]);
+        dto.setLmax(lmaxmin[0]);
+        dto.setLeq(leq);
+        dto.setSampleRate(audioData.getSampleRate());
+        dto.setChannels(audioData.getChannels());
+        return dto;
+    }
+
+    // Retorna DTO con espectrograma
+    public SpectrogramDTO getSpectrogram(File wavFile, int windowSec) throws Exception {
+        AudioData audioData = loadAudioData(wavFile);
+
+        double[][] spectrogram = computeSpectrogram(audioData.getSignal(), audioData.getSampleRate(), windowSec);
+
+        SpectrogramDTO dto = new SpectrogramDTO();
+        dto.setSpectrogram(spectrogram);
+        dto.setSampleRate(audioData.getSampleRate());
+        dto.setWindowSizeSec(windowSec);
+        dto.setFrames(spectrogram.length);
+        dto.setChannels(audioData.getChannels());
+        return dto;
+    }
+
+    // Retorna DTO con evolución temporal de Leq
+    public LeqSeriesDTO getLeqSeries(File wavFile, int windowSec) throws Exception {
+        AudioData audioData = loadAudioData(wavFile);
+
+        double[] series = computeLeqMoving(audioData.getSignal(), audioData.getSampleRate(), windowSec);
+
+        LeqSeriesDTO dto = new LeqSeriesDTO();
+        dto.setLeqSeries(series);
+        dto.setWindowSizeSec(windowSec);
+        dto.setSampleRate(audioData.getSampleRate());
+        dto.setChannels(audioData.getChannels());
+        return dto;
+    }
+
+    // Retorna DTO con bandas de octava
+    public OctaveBandsDTO getOctaveBands(File wavFile) throws Exception {
+        AudioData audioData = loadAudioData(wavFile);
+
+        double[] spectrum = correctionService.computeSpectrum(audioData.getSignal(), audioData.getSampleRate());
+        Map<String, Double> bands = computeOctaveBands(spectrum, audioData.getSampleRate());
+
+        OctaveBandsDTO dto = new OctaveBandsDTO();
+        dto.setOctaveBands(bands);
+        dto.setSampleRate(audioData.getSampleRate());
+        dto.setChannels(audioData.getChannels());
+        return dto;
+    }
+
+    private AudioData loadAudioData(File wavFile) throws Exception {
         AudioInputStream audioStream = AudioSystem.getAudioInputStream(wavFile);
         AudioFormat format = audioStream.getFormat();
 
@@ -31,90 +150,15 @@ public class AcousticService {
         byte[] audioBytes = audioStream.readAllBytes();
         double[] signal = correctionService.bytesToDoubleArray(audioBytes, format);
 
-        // Aplicar ponderación A
+        // Aplicar ponderación A por defecto (siempre trabajamos en dBA)
         double[] weightedSignal = weightingService.applyAWeighting(signal, fs);
 
-        // Calcular métricas principales
-        double leq = calculateLeq(weightedSignal);
-        Map<String, Double> ln = calculateLn(weightedSignal, fs);
+        AudioData audioData = new AudioData();
+        audioData.setSignal(weightedSignal);
+        audioData.setSampleRate(fs);
+        audioData.setChannels(channels);
 
-        // Niveles por ventana de 125 ms (para histograma y variabilidad)
-        double[] frameLevels = computeFrameLevels(weightedSignal, fs, 125);
-
-        // Espectro de la señal completa
-        double[] spectrum = correctionService.computeSpectrum(weightedSignal, fs);
-
-        // Parámetros espaciales si es estéreo
-        Map<String, Object> spatial = null;
-        if (channels == 2) {
-            spatial = spatialService.computeSpatialParams(wavFile);
-        }
-
-        // Variabilidad
-        double deltaL = computeDeltaL(ln);
-
-        // Bandas de octava
-        Map<String, Double> octaveBands = computeOctaveBands(spectrum, fs);
-
-        // Histograma de niveles (usando frameLevels en dB)
-        Map<String, Integer> histogram = computeLevelHistogram(frameLevels);
-
-        double[] lmaxmin = computeLmaxLmin(weightedSignal);
-        double durationAbove65 = computeDurationAbove(weightedSignal, fs, 65);
-        double durationAbove70 = computeDurationAbove(weightedSignal, fs, 70);
-        double[] leqSeries = computeLeqMoving(weightedSignal, fs, 60); // ventana de 1 min
-        double[][] spectrogram = computeSpectrogram(weightedSignal, fs, 1); // ventanas de 1s
-
-        // Construir resultado completo
-        AcousticResult result = new AcousticResult();
-        result.setSampleRate(fs);
-        result.setChannels(channels);
-        result.setWeighting("A");
-        result.setLeq(leq);
-        result.setLevels(frameLevels);
-        result.setLn(ln);
-        result.setIacc(spatial != null ? (Double) spatial.get("IACC") : null);
-        result.setTiacc(spatial != null ? (List<Double>) spatial.get("TIACC") : null);
-        result.setWiacc(spatial != null ? (Double) spatial.get("WIACC") : null);
-        result.setLmax(lmaxmin[0]);
-        result.setLmin(lmaxmin[1]);
-        result.setDurationAbove65(durationAbove65);
-        result.setDurationAbove70(durationAbove70);
-        result.setLeqSeries(leqSeries);
-        result.setSpectrogram(spectrogram);
-
-        // Guardar resultado en archivo
-        saveResultToFile(result, wavFile.getName());
-
-        // Construir resumen
-        AcousticSummary summary = new AcousticSummary();
-        summary.setSampleRate(fs);
-        summary.setChannels(channels);
-        summary.setWeighting("A");
-        summary.setLeq(leq);
-        summary.setLn(ln);
-
-        // Resumir espectro (preview de 100 puntos máx)
-        int step = Math.max(1, spectrum.length / 100);
-        int previewSize = (int) Math.ceil((double) spectrum.length / step);
-        double[] preview = new double[previewSize];
-        for (int i = 0, j = 0; i < spectrum.length && j < previewSize; i += step, j++) {
-            preview[j] = spectrum[i];
-        }
-        summary.setSpectrumPreview(preview);
-
-        // Añadir estadísticas nuevas
-        summary.setDeltaL(deltaL);
-        summary.setOctaveBands(octaveBands);
-        summary.setLevelHistogram(histogram);
-        summary.setLmax(lmaxmin[0]);
-        summary.setLmin(lmaxmin[1]);
-        summary.setDurationAbove65(durationAbove65);
-        summary.setDurationAbove70(durationAbove70);
-        summary.setLeqSeries(leqSeries);
-        summary.setSpectrogram(spectrogram);
-
-        return summary;
+        return audioData;
     }
 
     private double calculateLeq(double[] signal) {
@@ -311,9 +355,9 @@ public class AcousticService {
         return spectrogram;
     }
 
-    private void saveResultToFile(AcousticResult result, String baseName) throws Exception {
+    private void saveResultToFile(AcousticAnalysisDTO dto, String baseName) throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(result);
+        String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(dto);
 
         Path dir = Paths.get("results");
         if (!Files.exists(dir)) {
