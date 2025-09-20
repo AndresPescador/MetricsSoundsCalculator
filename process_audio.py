@@ -1,31 +1,10 @@
 #!/usr/bin/env python3
 """
-process_audio.py - Script de procesamiento de audio para monitoreo de ruido ambiental
-Universidad Distrital Francisco José de Caldas
-Proyecto de Monitoreo de Ruido Ambiental
-
-Este script procesa archivos de audio .wav para extraer métricas de ruido
-y almacenarlas en una base de datos SQLite.
-
 Uso:
     python process_audio.py [--watch] [--folder FOLDER_PATH]
     
     --watch: Modo de monitoreo continuo (para Raspberry Pi)
     --folder: Carpeta a monitorear (por defecto: ./audio_files/)
-
-INTEGRACIÓN CON RASPBERRY PI:
-    En la implementación final, este script trabajará en conjunto con un programa
-    en C++ que maneja la grabación de audio en tiempo real. El flujo será:
-    
-    1. Programa C++ graba audio continuamente y guarda archivos .wav en carpeta compartida
-    2. Este script Python monitorea la carpeta usando watchdog
-    3. Cuando se detecta un nuevo archivo .wav, se procesa automáticamente
-    4. Los resultados se almacenan en SQLite para el dashboard
-    
-    Configuración recomendada para Raspberry Pi:
-    - Usar modo --watch para monitoreo continuo
-    - Configurar carpeta compartida entre C++ y Python (ej: /home/pi/audio_recordings/)
-    - Configurar como servicio systemd para inicio automático
 """
 
 import os
@@ -463,37 +442,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# INTEGRACIÓN RASPBERRY PI - CONFIGURACIÓN ADICIONAL RECOMENDADA:
-#
-# 1. Servicio systemd para ejecución automática:
-#    Crear archivo /etc/systemd/system/audio-processor.service:
-#    
-#    [Unit]
-#    Description=Audio Processor for Noise Monitoring
-#    After=network.target
-#    
-#    [Service]
-#    Type=simple
-#    User=pi
-#    WorkingDirectory=/home/pi/noise_monitoring
-#    ExecStart=/usr/bin/python3 process_audio.py --watch --folder /home/pi/audio_recordings/
-#    Restart=always
-#    RestartSec=10
-#    
-#    [Install]
-#    WantedBy=multi-user.target
-#
-# 2. Configuración de logging para Raspberry Pi:
-#    - Configurar rotación de logs para evitar llenar el almacenamiento
-#    - Considerar envío de logs a servidor remoto si es necesario
-#
-# 3. Monitoreo de salud del sistema:
-#    - Verificar espacio en disco disponible
-#    - Monitorear temperatura de la CPU
-#    - Verificar estado de la conexión de red
-#
-# 4. Sincronización con servidor remoto:
-#    - Implementar envío periódico de datos a servidor central
-#    - Considerar compresión de datos para reducir uso de ancho de banda
-#    - Implementar sistema de respaldo local en caso de pérdida de conexión
